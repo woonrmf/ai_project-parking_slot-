@@ -25,8 +25,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 model = YOLO("best.pt")
 slots = load_slots("slots.csv")
 
-# [핵심 변경 1] 현재 분석 결과 공유를 위한 전역 변수 선언
-# 실제 서비스 단계에서는 Redis 같은 DB나 세션별 관리가 필요하지만, 데모용으로는 전역 변수가 가장 간단합니다.
 latest_analysis_result = {
     "vehicles": [{"type": "car", "count": 0}],
     "spaces": [{"id": i+1, "occupied": 0} for i in range(len(slots))]
@@ -42,7 +40,7 @@ async def upload_video(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"업로드 실패: {e}")
 
-# 오버레이 함수 (기존과 동일)
+# 오버레이 함수
 def draw_overlay(frame, car_boxes, slots):
     for idx, pts in enumerate(slots):
         pts_np = np.array(pts, dtype=np.int32)
@@ -62,7 +60,7 @@ def draw_overlay(frame, car_boxes, slots):
     
     return frame
 
-# [핵심 변경 2] 스트리밍 함수에서 분석 데이터 업데이트 및 속도 조절
+# 분석 데이터 업데이트 및 속도 조절
 @app.get("/stream")
 def stream_video(speed: int = 1): # speed 쿼리 파라미터 추가 (기본 1배속)
     video_path = os.path.join(UPLOAD_FOLDER, "current.mp4")
@@ -89,7 +87,6 @@ def stream_video(speed: int = 1): # speed 쿼리 파라미터 추가 (기본 1�
             
             frame_count += 1
             
-            # [속도 조절 로직] 
             # 현재 프레임이 skip_frames의 배수가 아니면 건너뜀 (처리 안 함 -> 빨라짐)
             if speed > 1 and frame_count % skip_frames != 0:
                 continue
@@ -106,9 +103,6 @@ def stream_video(speed: int = 1): # speed 쿼리 파라미터 추가 (기본 1�
             
             last_car_boxes = car_boxes
 
-            # ---------------------------------------------------------
-            # [중요] 여기서 최신 데이터를 전역 변수에 업데이트합니다.
-            # ---------------------------------------------------------
             spaces_status = []
             for idx, pts in enumerate(slots):
                 pts_np = np.array(pts, dtype=np.int32)
@@ -141,8 +135,6 @@ def stream_video(speed: int = 1): # speed 쿼리 파라미터 추가 (기본 1�
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
-
-# [핵심 변경 3] 결과 반환 API는 이제 단순히 저장된 최신 값을 리턴
 @app.get("/parking_spaces")
 def parking_spaces():
     # 더 이상 여기서 cv2.VideoCapture를 하지 않습니다.
